@@ -1,4 +1,4 @@
-name: Terraform Deploy Caller Example
+name: Terraform Deploy Caller
 
 on:
   pull_request:
@@ -10,12 +10,12 @@ on:
 
 jobs:
   terraform:
-    uses: ./terraform-deploy.yaml
+    uses: ./.github/workflows/terraform-deploy.yaml
     with:
       terraform_version: 1.9.8
-      working_directory: infra
-      tf_var_file: env/dev.tfvars
-      backend_config_file: env/dev.tfbackend
+      working_directory: terraform
+      tf_var_file: env/dev/dev.tfvars
+      backend_config_file: env/dev/dev.tfbackend
       apply_on_pr: false
       apply_on_merge: true
       artifact_retention_days: 7
