@@ -238,10 +238,12 @@ jobs:
 
           artifact_run_id="$(gh api \
             -H 'Accept: application/vnd.github+json' \
-            "/repos/${GITHUB_REPOSITORY}/actions/artifacts" \
-            --paginate \
-            --jq ".artifacts[] | select(.expired == false and .name == \"${artifact_name}\") | .workflow_run.id" \
-            | head -n1)"
+            "/repos/${GITHUB_REPOSITORY}/actions/artifacts?name=${artifact_name}&per_page=100" \
+            --jq '.artifacts
+              | map(select(.expired == false))
+              | sort_by(.created_at)
+              | last
+              | .workflow_run.id // empty')"
 
           if [[ -z "$artifact_run_id" ]]; then
             echo "Unable to locate artifact '${artifact_name}' in repository artifact list." >&2
