@@ -67,6 +67,12 @@ jobs:
     name: Plan
     if: ${{ github.event.pull_request.number != null }}
     runs-on: ubuntu-latest
+    env:
+      ARM_USE_OIDC: true
+      ARM_USE_CLI: false
+      ARM_CLIENT_ID: ${{ inputs.azure_client_id }}
+      ARM_TENANT_ID: ${{ inputs.azure_tenant_id }}
+      ARM_SUBSCRIPTION_ID: ${{ inputs.azure_subscription_id }}
     outputs:
       pr_number: ${{ steps.resolve.outputs.pr_number }}
       plan_file: ${{ steps.resolve.outputs.plan_file }}
@@ -123,11 +129,6 @@ jobs:
         shell: bash
         env:
           INPUT_BACKEND_CONFIG_FILE: ${{ inputs.backend_config_file }}
-          ARM_USE_OIDC: true
-          ARM_USE_CLI: false
-          ARM_CLIENT_ID: ${{ inputs.azure_client_id }}
-          ARM_TENANT_ID: ${{ inputs.azure_tenant_id }}
-          ARM_SUBSCRIPTION_ID: ${{ inputs.azure_subscription_id }}
         run: |
           set -euo pipefail
 
@@ -263,11 +264,6 @@ jobs:
         shell: bash
         env:
           INPUT_BACKEND_CONFIG_FILE: ${{ inputs.backend_config_file }}
-          ARM_USE_OIDC: true
-          ARM_USE_CLI: false
-          ARM_CLIENT_ID: ${{ inputs.azure_client_id }}
-          ARM_TENANT_ID: ${{ inputs.azure_tenant_id }}
-          ARM_SUBSCRIPTION_ID: ${{ inputs.azure_subscription_id }}
         run: |
           set -euo pipefail
 
