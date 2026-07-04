@@ -1,0 +1,23 @@
+name: Terraform Deploy Caller Example
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+jobs:
+  terraform:
+    uses: ./terraform-deploy.yaml
+    with:
+      terraform_version: 1.9.8
+      working_directory: infra
+      tf_var_file: env/dev.tfvars
+      backend_config_file: env/dev.tfbackend
+      apply_on_pr: false
+      apply_on_merge: true
+      artifact_retention_days: 7
+      azure_client_id: ${{ vars.AZURE_CLIENT_ID }}
+      azure_tenant_id: ${{ vars.AZURE_TENANT_ID }}
