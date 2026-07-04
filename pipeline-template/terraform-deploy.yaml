@@ -1,0 +1,257 @@
+name: Terraform Deploy (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      terraform_version:
+        description: Terraform version to install.
+        required: false
+        type: string
+        default: 1.9.8
+      working_directory:
+        description: Directory containing Terraform configuration.
+        required: false
+        type: string
+        default: .
+      tf_var_file:
+        description: Optional tfvars file path.
+        required: false
+        type: string
+        default: ""
+      backend_config_file:
+        description: Optional backend config file path (.tfbackend).
+        required: false
+        type: string
+        default: ""
+      apply_on_pr:
+        description: Run apply in pull request workflows.
+        required: false
+        type: boolean
+        default: false
+      apply_on_merge:
+        description: Run apply in non-PR workflows (for merge/push paths).
+        required: false
+        type: boolean
+        default: true
+      artifact_retention_days:
+        description: Retention period for Terraform plan artifacts.
+        required: false
+        type: number
+        default: 7
+      pr_number:
+        description: Optional PR number override for non-PR apply workflows.
+        required: false
+        type: string
+        default: ""
+      azure_client_id:
+        description: Azure client ID used for OIDC login.
+        required: true
+        type: string
+      azure_tenant_id:
+        description: Azure tenant ID used for OIDC login.
+        required: true
+        type: string
+      azure_subscription_id:
+        description: Azure subscription ID used for OIDC login.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+  id-token: write
+
+jobs:
+  plan:
+    name: Plan
+    if: ${{ github.event.pull_request.number != null }}
+    runs-on: ubuntu-latest
+    outputs:
+      pr_number: ${{ steps.resolve.outputs.pr_number }}
+      plan_file: ${{ steps.resolve.outputs.plan_file }}
+      artifact_name: ${{ steps.resolve.outputs.artifact_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ inputs.azure_client_id }}
+          tenant-id: ${{ inputs.azure_tenant_id }}
+          subscription-id: ${{ inputs.azure_subscription_id }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+
+      - name: Resolve plan identity
+        id: resolve
+        shell: bash
+        env:
+          INPUT_WORKING_DIR: ${{ inputs.working_directory }}
+          INPUT_TF_VAR_FILE: ${{ inputs.tf_var_file }}
+          INPUT_BACKEND_CONFIG_FILE: ${{ inputs.backend_config_file }}
+        run: |
+          set -euo pipefail
+
+          pr_number="${{ github.event.pull_request.number }}"
+
+          key_material="${pr_number}|${INPUT_WORKING_DIR}"
+          key_hash="$(printf '%s' "$key_material" | sha256sum | cut -c1-16)"
+
+          artifact_name="terraform-plan-pr-${pr_number}-${key_hash}"
+          plan_file="terraform-plan-pr-${pr_number}-${key_hash}.tfplan"
+
+          echo "pr_number=${pr_number}" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=${artifact_name}" >> "$GITHUB_OUTPUT"
+          echo "plan_file=${plan_file}" >> "$GITHUB_OUTPUT"
+
+      - name: Terraform init
+        shell: bash
+        env:
+          INPUT_BACKEND_CONFIG_FILE: ${{ inputs.backend_config_file }}
+        run: |
+          set -euo pipefail
+
+          cd "${{ inputs.working_directory }}"
+          args=("-input=false")
+
+          if [[ -n "$INPUT_BACKEND_CONFIG_FILE" ]]; then
+            args+=("-backend-config=$INPUT_BACKEND_CONFIG_FILE")
+          fi
+
+          terraform init "${args[@]}"
+
+      - name: Terraform plan
+        shell: bash
+        env:
+          INPUT_TF_VAR_FILE: ${{ inputs.tf_var_file }}
+          PLAN_PATH: ${{ runner.temp }}/${{ steps.resolve.outputs.plan_file }}
+        run: |
+          set -euo pipefail
+
+          cd "${{ inputs.working_directory }}"
+          args=()
+
+          if [[ -n "$INPUT_TF_VAR_FILE" ]]; then
+            args+=("-var-file=$INPUT_TF_VAR_FILE")
+          fi
+
+          terraform plan -input=false -out "$PLAN_PATH" "${args[@]}"
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.resolve.outputs.artifact_name }}
+          path: ${{ runner.temp }}/${{ steps.resolve.outputs.plan_file }}
+          if-no-files-found: error
+          retention-days: ${{ inputs.artifact_retention_days }}
+
+  apply:
+    name: Apply
+    if: ${{ (github.event.pull_request.number != null && inputs.apply_on_pr) || (github.event.pull_request.number == null && inputs.apply_on_merge) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          allow-no-subscriptions: true
+          client-id: ${{ inputs.azure_client_id }}
+          tenant-id: ${{ inputs.azure_tenant_id }}
+          subscription-id: ${{ inputs.azure_subscription_id }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+
+      - name: Resolve PR and artifact identity
+        id: resolve
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_PR_NUMBER: ${{ inputs.pr_number }}
+          INPUT_WORKING_DIR: ${{ inputs.working_directory }}
+          INPUT_TF_VAR_FILE: ${{ inputs.tf_var_file }}
+          INPUT_BACKEND_CONFIG_FILE: ${{ inputs.backend_config_file }}
+        run: |
+          set -euo pipefail
+
+          pr_number=""
+          if [[ -n "${{ github.event.pull_request.number }}" ]]; then
+            pr_number="${{ github.event.pull_request.number }}"
+          elif [[ -n "$INPUT_PR_NUMBER" ]]; then
+            pr_number="$INPUT_PR_NUMBER"
+          else
+            pr_number="$(gh api \
+              -H 'Accept: application/vnd.github+json' \
+              "/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
+              --jq '.[0].number')"
+          fi
+
+          if [[ -z "$pr_number" || "$pr_number" == "null" ]]; then
+            echo "Unable to resolve PR number. Provide inputs.pr_number for non-PR apply workflows." >&2
+            exit 1
+          fi
+
+          key_material="${pr_number}|${INPUT_WORKING_DIR}"
+          key_hash="$(printf '%s' "$key_material" | sha256sum | cut -c1-16)"
+
+          artifact_name="terraform-plan-pr-${pr_number}-${key_hash}"
+          plan_file="terraform-plan-pr-${pr_number}-${key_hash}.tfplan"
+
+          echo "Resolved PR: ${pr_number}"
+          echo "Resolved artifact: ${artifact_name}"
+
+          echo "pr_number=${pr_number}" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=${artifact_name}" >> "$GITHUB_OUTPUT"
+          echo "plan_file=${plan_file}" >> "$GITHUB_OUTPUT"
+
+      - name: Download plan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.resolve.outputs.artifact_name }}
+          path: ${{ runner.temp }}
+
+      - name: Ensure plan file exists
+        shell: bash
+        env:
+          PLAN_PATH: ${{ runner.temp }}/${{ steps.resolve.outputs.plan_file }}
+        run: |
+          set -euo pipefail
+          if [[ ! -f "$PLAN_PATH" ]]; then
+            echo "Expected plan file not found: $PLAN_PATH" >&2
+            exit 1
+          fi
+
+      - name: Terraform init
+        shell: bash
+        env:
+          INPUT_BACKEND_CONFIG_FILE: ${{ inputs.backend_config_file }}
+        run: |
+          set -euo pipefail
+
+          cd "${{ inputs.working_directory }}"
+          args=("-input=false")
+
+          if [[ -n "$INPUT_BACKEND_CONFIG_FILE" ]]; then
+            args+=("-backend-config=$INPUT_BACKEND_CONFIG_FILE")
+          fi
+
+          terraform init "${args[@]}"
+
+      - name: Terraform apply exact plan
+        shell: bash
+        env:
+          PLAN_PATH: ${{ runner.temp }}/${{ steps.resolve.outputs.plan_file }}
+        run: |
+          set -euo pipefail
+          cd "${{ inputs.working_directory }}"
+          terraform apply -input=false -auto-approve "$PLAN_PATH"
+
