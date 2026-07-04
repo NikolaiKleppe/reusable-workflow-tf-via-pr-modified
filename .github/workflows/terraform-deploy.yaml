@@ -236,17 +236,34 @@ jobs:
           artifact_name="terraform-plan-pr-${pr_number}-${key_hash}"
           plan_file="terraform-plan-pr-${pr_number}-${key_hash}.tfplan"
 
+          artifact_run_id="$(gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/${GITHUB_REPOSITORY}/actions/artifacts" \
+            --paginate \
+            --jq ".artifacts[] | select(.expired == false and .name == \"${artifact_name}\") | .workflow_run.id" \
+            | head -n1)"
+
+          if [[ -z "$artifact_run_id" ]]; then
+            echo "Unable to locate artifact '${artifact_name}' in repository artifact list." >&2
+            exit 1
+          fi
+
           echo "Resolved PR: ${pr_number}"
           echo "Resolved artifact: ${artifact_name}"
+          echo "Resolved artifact run ID: ${artifact_run_id}"
 
           echo "pr_number=${pr_number}" >> "$GITHUB_OUTPUT"
           echo "artifact_name=${artifact_name}" >> "$GITHUB_OUTPUT"
           echo "plan_file=${plan_file}" >> "$GITHUB_OUTPUT"
+          echo "artifact_run_id=${artifact_run_id}" >> "$GITHUB_OUTPUT"
 
       - name: Download plan artifact
         uses: actions/download-artifact@v4
         with:
           name: ${{ steps.resolve.outputs.artifact_name }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.resolve.outputs.artifact_run_id }}
           path: ${{ runner.temp }}
 
       - name: Ensure plan file exists
