@@ -214,8 +214,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           INPUT_PR_NUMBER: ${{ inputs.pr_number }}
           INPUT_WORKING_DIR: ${{ inputs.working_directory }}
-          INPUT_TF_VAR_FILE: ${{ inputs.tf_var_file }}
-          INPUT_BACKEND_CONFIG_FILE: ${{ inputs.backend_config_file }}
         run: |
           set -euo pipefail
 
