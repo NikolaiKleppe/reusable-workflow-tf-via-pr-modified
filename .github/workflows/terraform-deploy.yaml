@@ -168,7 +168,8 @@ jobs:
 
   apply:
     name: Apply
-    if: ${{ (github.event.pull_request.number != null && inputs.apply_on_pr) || (github.event.pull_request.number == null && inputs.apply_on_merge) }}
+    needs: [plan]
+    if: ${{ always() && ((github.event.pull_request.number != null && inputs.apply_on_pr && needs.plan.result == 'success') || (github.event.pull_request.number == null && inputs.apply_on_merge)) }}
     runs-on: ubuntu-latest
     env:
       ARM_USE_OIDC: true
