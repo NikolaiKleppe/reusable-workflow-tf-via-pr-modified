@@ -67,6 +67,10 @@ permissions:
   id-token: write
 
 jobs:
+
+##################
+# Terraform Plan #
+##################
   plan:
     name: Plan
     if: ${{ github.event.pull_request.number != null }}
@@ -170,6 +174,10 @@ jobs:
           if-no-files-found: error
           retention-days: ${{ inputs.artifact_retention_days }}
 
+
+###################
+# Terraform Apply #
+###################
   apply:
     name: Apply
     needs: [plan]
