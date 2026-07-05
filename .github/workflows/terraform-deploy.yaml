@@ -43,6 +43,10 @@ on:
         required: false
         type: string
         default: ""
+      apply_environment:
+        description: GitHub Environment name used to gate apply with protection rules.
+        required: true
+        type: string
       azure_client_id:
         description: Azure client ID used for OIDC login.
         required: true
@@ -171,6 +175,7 @@ jobs:
     needs: [plan]
     if: ${{ always() && ((github.event.pull_request.number != null && inputs.apply_on_pr && needs.plan.result == 'success') || (github.event.pull_request.number == null && inputs.apply_on_merge)) }}
     runs-on: ubuntu-latest
+    environment: ${{ inputs.apply_environment }}
     env:
       ARM_USE_OIDC: true
       ARM_USE_CLI: false
