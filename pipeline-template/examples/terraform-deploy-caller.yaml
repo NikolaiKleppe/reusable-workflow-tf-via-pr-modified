@@ -18,6 +18,7 @@ jobs:
       backend_config_file: env/dev.tfbackend
       apply_on_pr: false
       apply_on_merge: true
+      apply_environment: dev
       artifact_retention_days: 7
       azure_client_id: ${{ vars.AZURE_CLIENT_ID }}
       azure_tenant_id: ${{ vars.AZURE_TENANT_ID }}
